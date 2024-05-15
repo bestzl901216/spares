@@ -1,0 +1,35 @@
+spring:
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher
+    converters:
+      preferred-json-mapper: jackson
+  profiles:
+    active: @profile@
+  application:
+    name: gpb-service
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 20MB
+      max-request-size: 20MB
+      file-size-threshold: 20MB
+  datasource:
+    name: defaultDataSource
+server:
+  port: 8090
+  servlet:
+    context-path: /api
+    encoding:
+      force: true
+      charset: UTF-8
+      enabled: true
+rocketmq:
+  producer:
+    group: ${spring.application.name}_${spring.profiles.active}
+mybatis-plus:
+  global-config:
+    db-config:
+      logic-delete-field: deleted_flag # 全局逻辑删除的实体字段名
+      logic-delete-value: 1 # 逻辑已删除值(默认为 1)
+      logic-not-delete-value: 0 # 逻辑未删除值(默认为 0)

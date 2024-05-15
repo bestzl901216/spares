@@ -1,0 +1,31 @@
+package org.geely.common.model;
+
+import io.swagger.annotations.ApiModelProperty;
+import lombok.Data;
+
+import java.util.List;
+
+@Data
+public class BaseUserPagingResp {
+    /**
+     * 状态码
+     */
+    @ApiModelProperty(value = "状态码")
+    private String code;
+
+    /**
+     * 信息
+     */
+    @ApiModelProperty(value = "信息")
+    private String message;
+
+    /**
+     * 用户列表
+     */
+    @ApiModelProperty(value = "数据")
+    private PageData<List<UserSearchDTO>> data;
+
+    public boolean isSuccess() {
+        return "200".equals(code);
+    }
+}

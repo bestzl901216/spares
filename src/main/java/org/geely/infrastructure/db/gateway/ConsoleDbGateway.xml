@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="org.geely.infrastructure.db.gateway.ConsoleDbGateway">
+    <select id="platformList" resultMap="platformListResultMap">
+        select role.platform_type,
+               role.platform_id,
+               case role.platform_type
+                   when 1 then '管理后台'
+                   when 2 then (select mall.name from mall where mall.id = role.platform_id)
+                   when 3 then (select supplier.name from supplier where supplier.id = role.platform_id)
+                   when 4 then (select shop.name from shop where shop.id = role.platform_id)
+                   end as platform_name
+        from role
+                 left join account_role_rel on role.id = account_role_rel.role_id and account_role_rel.deleted_flag = 0
+        where role.deleted_flag = 0
+          and account_role_rel.state = 1
+          and account_role_rel.account_id = #{accountId}
+
+    </select>
+    <resultMap id="platformListResultMap" type="org.geely.controller.dto.PlatformDTO">
+        <result property="platformType" column="platform_type"
+                typeHandler="com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler"/>
+        <collection property="children" ofType="org.geely.controller.dto.PairDTO">
+            <id property="id" column="platform_id"/>
+            <result property="name" column="platform_name"/>
+        </collection>
+    </resultMap>
+    <select id="noticePage" resultType="org.geely.controller.dto.NoticeDTO">
+        select id, title, content, time, state
+        from notice
+        where platform_type = #{platformType}
+          and platform_id = #{platformId}
+          and deleted_flag = 0
+        order by state, time desc
+    </select>
+    <select id="marketChannelPage" resultType="org.geely.controller.dto.MarketChannelDTO">
+        select market_channel.id          as id,
+               market_channel.name        as name,
+               market_channel.remark      as remark,
+               market_channel.create_time as createTime,
+               COUNT(customer.id)         as customerCount
+        from market_channel
+                 left join customer on market_channel.id = customer.market_channel_id and customer.state = 2 and
+                                       customer.deleted_flag = 0
+        where market_channel.deleted_flag = 0
+        group by market_channel.id
+        order by market_channel.id desc
+    </select>
+    <select id="mallPage" resultType="org.geely.controller.dto.MallDTO">
+        select mall.id as id,
+        mall.name as name,
+        'todo 商户号' as merchantNo,
+        (select concat_ws('/', account.name, account.phone)
+        from role
+        left join account_role_rel on role.id = account_role_rel.role_id and account_role_rel.deleted_flag = 0
+        left join account on account_role_rel.account_id = account.id and account.deleted_flag = 0
+        where role.platform_type = 2 and role.deleted_flag = 0
+        and role.platform_id = mall.id
+        and role.name = '${@org.geely.domain.core.Mall@ADMIN_ROLE_NAME}'
+        ) as admin,
+        GROUP_CONCAT(market_channel.name SEPARATOR ' ') as marketChannels,
+        mall.create_time as createTime,
+        mall.state as state
+        from mall
+        left join market_channel_rel mcr on mall.id = mcr.platform_id and mcr.platform_type = 2 and mcr.deleted_flag = 0
+        left join market_channel on mcr.market_channel_id = market_channel.id and market_channel.deleted_flag = 0
+        <where>
+            mall.deleted_flag = 0
+            <if test="name != null and name != ''">
+                and mall.name like concat('%', #{name}, '%')
+            </if>
+            <if test="state != null">
+                and mall.state = #{state}
+            </if>
+            <if test="marketChannelId != null">
+                and market_channel.id = #{marketChannelId}
+            </if>
+        </where>
+        group by mall.id, mall.name, mall.create_time, mall.state
+    </select>
+    <select id="customerPage" resultType="org.geely.controller.dto.CustomerDTO">
+        select customer.id as id,
+        account.name as adminName,
+        account.phone as adminPhone,
+        customer.name as name,
+        customer.create_time as createTime,
+        market_channel.name as marketChannel,
+        customer.state as state,
+        customer.certify_state as certifyState
+        from customer
+        left join role
+        on role.platform_type = 0 and role.platform_id = customer.id and role.name =
+        '${@org.geely.domain.core.Customer@ADMIN_ROLE_NAME}' and
+        role.deleted_flag = 0
+        left join account_role_rel on account_role_rel.role_id = role.id and account_role_rel.deleted_flag = 0
+        left join account on account.id = account_role_rel.account_id and account.deleted_flag = 0
+        left join market_channel on market_channel.id = customer.market_channel_id and market_channel.deleted_flag = 0
+        <where>
+            customer.deleted_flag = 0
+            <if test="admin != null and admin != ''">
+                and (account.name like concat('%', #{admin}, '%') or account.phone like concat('%', #{admin}, '%'))
+            </if>
+            <if test="name != null and name != ''">
+                and customer.name like concat('%', #{name}, '%')
+            </if>
+            <if test="state != null">
+                and customer.state = #{state}
+            </if>
+            <if test="marketChannelId != null">
+                and market_channel.id = #{marketChannelId}
+            </if>
+        </where>
+    </select>
+    <select id="staffPage" resultType="org.geely.controller.dto.StaffDTO">
+        select account.id as id,
+        account.name as name,
+        account.phone as phone,
+        role.name as roleName,
+        account.create_time as createTime,
+        account_role_rel.state as state
+        from role
+        left join account_role_rel on account_role_rel.role_id = role.id and account_role_rel.deleted_flag = 0
+        left join account on account.id = account_role_rel.account_id and account.deleted_flag = 0
+        <where>
+            role.platform_type = 1
+            and role.platform_id = 0
+            and role.deleted_flag = 0
+            and account.id is not null
+            <if test="phone != null and phone != ''">
+                and account.phone like concat('%', #{phone}, '%')
+            </if>
+        </where>
+        order by account.id desc
+    </select>
+    <select id="rolePage" resultType="org.geely.controller.dto.RoleDTO">
+        select role.id                                   as id,
+               role.name                                 as name,
+               role.remark                               as remark,
+               JSON_LENGTH(role.permissions)             as permissionCount,
+               (select count(id)
+                from account_role_rel
+                where account_role_rel.role_id = role.id
+                  and account_role_rel.deleted_flag = 0) as staffCount
+        from role
+        where role.platform_type = 1
+          and role.platform_id = 0
+          and role.deleted_flag = 0
+        order by role.id desc
+    </select>
+    <select id="mallBannerPage" resultType="org.geely.controller.dto.MallBannerDTO">
+        select mall_banner.mall_id as mallId,
+        mall.name as mallName,
+        mall_banner.title as title,
+        mall_banner.image_url as imageUrl,
+        mall_banner.action_url as actionUrl,
+        mall_banner.sort as sort,
+        mall_banner.state as state,
+        mall_banner.create_time as createTime
+        from mall_banner
+        left join mall on mall_banner.mall_id = mall.id
+        <where>
+            mall_banner.deleted_flag = 0
+            <if test="mallName != null and mallName != ''">
+                and mall.name like concat('%', #{mallName}, '%')
+            </if>
+            <if test="title != null and title != ''">
+                and mall_banner.title like concat('%', #{title}, '%')
+            </if>
+            <if test="state != null">
+                and mall_banner.state = #{state}
+            </if>
+        </where>
+    </select>
+    <select id="setting" resultType="org.geely.controller.dto.SettingDTO">
+        select name as name, motto as motto, service_phone as servicePhone, logo as logo
+        from platform_setting
+    </select>
+</mapper>

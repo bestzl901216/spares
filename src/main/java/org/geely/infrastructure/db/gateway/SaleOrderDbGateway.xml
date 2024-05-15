@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="org.geely.infrastructure.db.gateway.SaleOrderDbGateway">
+    <select id="getSaleOrderStatistics" resultType="org.geely.controller.dto.SaleOrderStatisticsDTO">
+        SELECT state,
+               count(1) count
+        FROM sale_order
+        WHERE customer_id = #{customerId}
+          AND mall_id = #{mallId}
+          AND deleted_flag = 0
+        GROUP BY state
+    </select>
+    <select id="saleOrderPage" resultMap="saleOrderPageMap">
+        select sale_order.id as id,
+        sale_order.sn as sn,
+        sale_order.create_time as createTime,
+        sale_order.pay_amount as payAmount,
+        sale_order.amount as amount,
+        sale_order.pay_type as payType,
+        shop.name as shopName,
+        sale_order.delivery_type as deliveryType,
+        sale_order.state as state,
+        json_arrayagg(
+        json_object(
+        'productName', sale_order_item.product_name,
+        'productCode', sale_order_item.product_code,
+        'productQuality', sale_order_item.product_quality,
+        'productBrand', sale_order_item.product_brand,
+        'skuSpecs', sale_order_item.sku_specs,
+        'price', sale_order_item.price,
+        'quantity', sale_order_item.quantity,
+        'unit', sale_order_item.unit,
+        'image', sale_order_item.image,
+        'skuId', sale_order_item.sku_id
+        )
+        ) as items
+
+        from sale_order
+        left join shop on sale_order.shop_id = shop.id and shop.deleted_flag = 0
+        left join sale_order_item
+        on sale_order.id = sale_order_item.sale_order_id and sale_order_item.deleted_flag = 0
+        <where>
+            sale_order.customer_id = #{customerId}
+            and sale_order.mall_id = #{mallId}
+            <if test="state != null">and sale_order.state = #{state}</if>
+            and sale_order.deleted_flag = 0
+        </where>
+        group by sale_order.id, sale_order.sn, sale_order.create_time, sale_order.pay_amount, sale_order.pay_type,
+        shop.name, sale_order.delivery_type, sale_order.state
+        order by sale_order.create_time desc
+    </select>
+    <resultMap id="saleOrderPageMap" type="org.geely.controller.dto.CustomerSaleOrderDTO">
+        <id property="id" column="id"/>
+        <result property="sn" column="sn"/>
+        <result property="createTime" column="createTime"/>
+        <result property="payAmount" column="payAmount"/>
+        <result property="payType" column="payType"/>
+        <result property="shopName" column="shopName"/>
+        <result property="deliveryType" column="deliveryType"/>
+        <result property="state" column="state"/>
+        <result property="items" column="items"
+                typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+    </resultMap>
+    <select id="getSaleOrderDetail" resultType="org.geely.controller.dto.CustomerSaleOrderDetailDTO">
+        select sale_order.id                       as id,
+               sale_order.sn                       as sn,
+               shop.name                           as shopName,
+               sale_order.state                    as state,
+               sale_order.create_time              as createTime,
+               sale_order.cancel_time              as cancelTime,
+               sale_order_pay.pay_time             as payTime,
+               sale_order.delivery_time            as deliveryTime,
+               sale_order.received_time            as receivedTime,
+               after_sale_order.amount_return_time as amountReturnTime,
+               sale_order.finished_time            as finishTime,
+               sale_order.pay_deadline             as payDeadline,
+               sale_order.received_deadline        as receivedDeadline,
+               sale_order.finished_deadline        as finishedDeadline,
+               sale_order.cancel_reason            as cancelReason,
+               sale_order.remark                   as remark,
+               sale_order.receiver                 as receiver,
+               sale_order.receiver_phone           as receiverPhone,
+               sale_order.receiver_province        as receiverProvince,
+               sale_order.receiver_city            as receiverCity,
+               sale_order.receiver_area            as receiverArea,
+               CONCAT(sale_order.receiver_province, REPLACE(sale_order.receiver_city,'市辖区',''), sale_order.receiver_area, sale_order.receiver_address) as receiverAddress,
+               sale_order.amount                   as amount,
+               sale_order.amount                   as payAmount,
+               sale_order_pay.pay_type             as payType,
+               sale_order_pay.pay_sn               as paySn,
+               sale_order.delivery_type            as deliveryType,
+               sale_order.freight_type             as freightType,
+               sale_order.cancel_from              as cancelFrom
+        from sale_order
+                 left join shop on sale_order.shop_id = shop.id and shop.deleted_flag = 0
+                 left join after_sale_order
+                           on sale_order.id = after_sale_order.sale_order_id and after_sale_order.deleted_flag = 0
+                 left join sale_order_pay
+                           on sale_order.id = sale_order_pay.sale_order_id
+                               and sale_order_pay.deleted_flag = 0
+        where sale_order.id = #{id}
+          and sale_order.mall_id = #{mallId}
+          and sale_order.customer_id = #{customerId}
+          and sale_order.deleted_flag = 0
+    </select>
+    <select id="getSaleOrderItems" resultType="org.geely.controller.dto.CustomerSaleOrderItemDTO">
+        select sale_order_item.id                               as id,
+               sale_order_item.product_id                       as productId,
+               sale_order_item.sku_id                           as skuId,
+               sale_order_item.material_code                    as materialCode,
+               sale_order_item.product_name                     as productName,
+               sale_order_item.product_code                     as productCode,
+               sale_order_item.image                            as productImage,
+               sale_order_item.sku_specs                        as skuSpecs,
+               sale_order_item.quantity                         as quantity,
+               sale_order_item.unit                             as unit,
+               sale_order_item.price                            as price,
+               sale_order_item.quantity * sale_order_item.price as amount,
+               sale_order_item.delivery_quantity                as deliveryQuantity,
+               sale_order_item.received_quantity                as receivedQuantity
+        from sale_order_item
+                 left join sale_order
+                           on sale_order.id = sale_order_item.sale_order_id and sale_order.deleted_flag = 0
+        where sale_order_item.sale_order_id = #{id}
+          and sale_order.mall_id = #{mallId}
+          and sale_order.customer_id = #{customerId}
+          and sale_order_item.deleted_flag = 0
+    </select>
+    <select id="deliveryOrderList" resultType="org.geely.controller.dto.CustomerDeliveryOrderDTO">
+        select delivery_note.id                                             as id,
+               delivery_note.sn                                             as sn,
+               delivery_note.express_company                                as expressCompany,
+               delivery_note.express_sn                                     as expressSn,
+               delivery_note.state                                          as state,
+               (select sum(quantity)
+                from delivery_package
+                where delivery_package.delivery_note_id = delivery_note.id) as quantity,
+               delivery_note.send_time                                      as sendTime,
+               delivery_note.received_time                                  as receivedTime,
+               delivery_note.received_deadline                              as receivedDeadline
+        from delivery_note
+        where delivery_note.sale_order_id = #{saleOrderId}
+    </select>
+    <select id="getOrderReminder" resultType="java.lang.Integer">
+        select count(*)
+        from sale_order
+        where customer_id = #{customerId}
+          and mall_id = #{mallId}
+          and state in (1, 2, 3, 4, 5, 6)
+          and deleted_flag = 0
+    </select>
+    <select id="getCartCount" resultType="java.lang.Integer">
+        select count(*)
+        from cart
+        where customer_id = #{customerId}
+          and mall_id = #{mallId}
+          and deleted_flag = 0
+    </select>
+    <select id="saleOrderFlow" resultMap="saleOrderFlowMap">
+        select role_name as roleName, concat(content,'（操作人：', creator,'）') as content, images as images, create_time as createTime
+        from sale_order_flow
+        where sale_order_id = #{id}
+          and deleted_flag = 0
+        order by id desc
+    </select>
+    <resultMap id="saleOrderFlowMap" type="org.geely.controller.dto.site.SaleOrderFlowDTO">
+        <result property="roleName" column="roleName"/>
+        <result property="content" column="content"/>
+        <result property="images" column="images"
+                typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+        <result property="createTime" column="createTime"/>
+    </resultMap>
+    <select id="deliveryPackageList" resultType="org.geely.controller.dto.site.CustomerDeliveryPackageDTO">
+        select sale_order_item.product_name                      as productName,
+               sale_order_item.product_code                      as productCode,
+               sale_order_item.material_code                     as material_code,
+               sale_order_item.sku_specs                         as skuSpecs,
+               delivery_package.quantity                         as quantity,
+               sale_order_item.image                             as image,
+               sale_order_item.unit                              as unit,
+               sale_order_item.price                             as price,
+               sale_order_item.price * delivery_package.quantity as amount
+        from delivery_package
+                 left join sale_order_item on delivery_package.sale_order_item_id = sale_order_item.id
+        where delivery_package.delivery_note_id = #{deliveryOrderId}
+          and delivery_package.sale_order_id = #{saleOrderId}
+          and delivery_package.deleted_flag = 0
+    </select>
+</mapper>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="org.geely.infrastructure.db.gateway.AccountDbGateway">
+    <select id="getAccountById" resultType="org.geely.controller.dto.AccountDTO">
+        SELECT
+            id,
+            name,
+            phone,
+            version,
+            icon,
+            state
+        FROM
+            account
+        WHERE
+            id=#{account_id}
+          AND deleted_flag =0
+    </select>
+</mapper>

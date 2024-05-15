@@ -1,0 +1,12 @@
+package org.geely.infrastructure.db.mapper;
+
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import org.apache.ibatis.annotations.Mapper;
+import org.geely.infrastructure.db.MessageConsumeLogDO;
+
+/**
+ * @author ricardo zhou
+ */
+@Mapper
+public interface MessageConsumeLogMapper extends BaseMapper<MessageConsumeLogDO> {
+}

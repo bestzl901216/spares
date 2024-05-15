@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="org.geely.infrastructure.db.gateway.ShopDbGateway">
+    <select id="saleOrderPage" resultMap="saleOrderPageMap">
+        select sale_order.id as id,
+        sale_order.sn as sn,
+        sale_order.sap_sn as sapSn,
+        sale_order.create_time as createTime,
+        sale_order.pay_amount as payAmount,
+        sale_order.amount,
+        sale_order.pay_type as payType,
+        customer.name as customerName,
+        account.name as customerAccountName,
+        sale_order.delivery_type as deliveryType,
+        sale_order.state as state,
+        json_arrayagg(
+        json_object(
+        'productName', sale_order_item.product_name,
+        'productCode', sale_order_item.product_code,
+        'productQuality', sale_order_item.product_quality,
+        'productBrand', sale_order_item.product_brand,
+        'skuSpecs', sale_order_item.sku_specs,
+        'price', sale_order_item.price,
+        'quantity', sale_order_item.quantity,
+        'image', sale_order_item.image
+        )
+        ) as items
+        from sale_order
+        left join customer on sale_order.customer_id = customer.id and customer.deleted_flag = 0
+        left join account on sale_order.customer_account_id = account.id and account.deleted_flag = 0
+        left join sale_order_item
+        on sale_order.id = sale_order_item.sale_order_id and sale_order_item.deleted_flag = 0
+        <where>
+            sale_order.shop_id = #{dto.shopId}
+            and sale_order.deleted_flag = 0
+            <if test="dto.sn != null and dto.sn != ''">
+                and sale_order.sn like concat('%', #{dto.sn}, '%')
+            </if>
+            <if test="dto.sapSn != null and dto.sapSn != ''">
+                and sale_order.sap_sn like concat('%', #{dto.sapSn}, '%')
+            </if>
+            <if test="dto.productKeyword != null and dto.productKeyword != ''">
+                and (sale_order_item.product_name like concat('%', #{dto.productKeyword}, '%') or
+                sale_order_item.product_code like concat('%', #{dto.productKeyword}, '%'))
+            </if>
+            <if test="dto.customerKeyword != null and dto.customerKeyword != ''">
+                and (customer.name like concat('%', #{dto.customerKeyword}, '%')
+                or account.name like concat('%', #{dto.customerKeyword}, '%'))
+            </if>
+            <if test="dto.createTimeStart != null and dto.createTimeStart > 0">
+                and sale_order.create_time >= from_unixtime(#{dto.createTimeStart})
+            </if>
+            <if test="dto.createTimeEnd != null and dto.createTimeEnd > 0">
+                and sale_order.create_time &lt;= from_unixtime(#{dto.createTimeEnd})
+            </if>
+        </where>
+        group by sale_order.sn, sale_order.sap_sn, sale_order.create_time, sale_order.pay_amount, sale_order.pay_type,
+        customer.name, account.name, sale_order.delivery_type, sale_order.state
+        order by sale_order.create_time desc
+    </select>
+    <resultMap id="saleOrderPageMap" type="org.geely.controller.dto.SaleOrderDTO">
+        <id property="id" column="id"/>
+        <result property="items" column="items"
+                typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+    </resultMap>
+    <select id="staffPage" resultType="org.geely.controller.dto.StaffDTO">
+        select account.id as id,
+        account.name as name,
+        account.phone as phone,
+        role.name as roleName,
+        account.create_time as createTime,
+        account_role_rel.state as state
+        from role
+        inner join account_role_rel on account_role_rel.role_id = role.id and account_role_rel.deleted_flag = 0
+        inner join account on account.id = account_role_rel.account_id and account.deleted_flag = 0
+        <where>
+            role.platform_type = 4
+            and role.platform_id = #{shopId}
+            and role.deleted_flag = 0
+            and account.id is not null
+            <if test="phone != null and phone != ''">
+                and account.phone like concat('%', #{phone}, '%')
+            </if>
+        </where>
+        order by account.id desc
+    </select>
+    <select id="rolePage" resultType="org.geely.controller.dto.RoleDTO">
+        select role.id                                   as id,
+               role.name                                 as name,
+               role.remark                               as remark,
+               JSON_LENGTH(role.permissions)             as permissionCount,
+               (select count(id)
+                from account_role_rel
+                where account_role_rel.role_id = role.id
+                  and account_role_rel.deleted_flag = 0) as staffCount
+        from role
+        where role.platform_type = 4
+          and role.platform_id = #{shopId}
+          and role.deleted_flag = 0
+        order by role.id desc
+    </select>
+    <select id="materialPage" resultType="org.geely.controller.dto.MaterialDTO">
+        SELECT
+        a.id,
+        a.CODE,
+        a.NAME,
+        a.oe_no,
+        a.category,
+        a.stock,
+        a.unit,
+        a.price,
+        a.update_time
+        FROM
+        material a
+        INNER JOIN material_shop_rel msr ON msr.material_id = a.id and msr.deleted_flag=0
+        WHERE msr.shop_id=#{shopId} and a.deleted_flag=0
+        <if test="keyword != null and keyword != ''">
+            and (a.code like concat('%', #{keyword}, '%') or a.name like concat('%', #{keyword}, '%') or a.oe_no like
+            concat('%', #{keyword}, '%'))
+        </if>
+        <if test="category != null and category != ''">
+            and a.category= #{category}
+        </if>
+    </select>
+    <select id="saleOrderDetail" resultType="org.geely.controller.dto.SaleOrderDetailDTO">
+        select sale_order.id                       as id,
+               sale_order.sn                       as sn,
+               sale_order.state                    as state,
+               sale_order.create_time              as createTime,
+               sale_order.cancel_time              as cancelTime,
+               sale_order_pay.pay_time             as payTime,
+               sale_order_pay.state                as payState,
+               sale_order.delivery_time            as deliveryTime,
+               sale_order.received_time            as receivedTime,
+               after_sale_order.amount_return_time as amountReturnTime,
+               sale_order.finished_time            as finishTime,
+               sale_order.pay_deadline             as payDeadline,
+               sale_order.received_deadline        as receivedDeadline,
+               sale_order.cancel_reason            as cancelReason,
+               sale_order.remark                   as remark,
+               sale_order.receiver                 as receiver,
+               sale_order.receiver_phone           as receiverPhone,
+               CONCAT(sale_order.receiver_province, REPLACE(sale_order.receiver_city,'市辖区',''), sale_order.receiver_area, sale_order.receiver_address) as receiverAddress,
+               sale_order.amount                   as amount,
+               sale_order.pay_amount               as payAmount,
+               sale_order_pay.pay_type             as payType,
+               sale_order_pay.pay_sn               as paySn,
+               sale_order.delivery_type            as deliveryType,
+               sale_order.freight_type             as freightType,
+               sale_order.finished_deadline        as finishDeadline,
+               sale_order.customer_id              as customerId,
+               customer.name                       as customerName
+        from sale_order
+                 left join after_sale_order
+                           on after_sale_order.sale_order_id = sale_order.id and after_sale_order.deleted_flag = 0
+                 left join sale_order_pay
+                           on sale_order.id = sale_order_pay.sale_order_id and sale_order_pay.deleted_flag = 0
+                 left join customer on sale_order.customer_id = customer.id
+        where sale_order.id = #{saleOrderId}
+          and sale_order.shop_id = #{shopId}
+          and sale_order.deleted_flag = 0
+    </select>
+    <select id="saleOrderItems" resultType="org.geely.controller.dto.SaleOrderItemDTO">
+        select sale_order_item.id                               as id,
+               sale_order_item.product_id                       as productId,
+               sale_order_item.sku_id                           as skuId,
+               sale_order_item.material_code                    as materialCode,
+               sale_order_item.product_name                     as productName,
+               sale_order_item.product_code                     as productCode,
+               sale_order_item.image                            as productImage,
+               sale_order_item.sku_specs                        as skuSpecs,
+               sale_order_item.quantity                         as quantity,
+               sale_order_item.unit                             as unit,
+               sale_order_item.price                            as price,
+               sale_order_item.quantity * sale_order_item.price as amount,
+               sale_order_item.delivery_quantity                as deliveryQuantity,
+               sale_order_item.received_quantity                as receivedQuantity
+        from sale_order_item
+                 left join sale_order
+                           on sale_order.id = sale_order_item.sale_order_id and sale_order.deleted_flag = 0
+        where sale_order_item.sale_order_id = #{saleOrderId}
+          and sale_order.shop_id = #{shopId}
+          and sale_order_item.deleted_flag = 0
+    </select>
+    <select id="deliveryOrderList" resultType="org.geely.controller.dto.DeliveryOrderDTO">
+        select delivery_note.id                                             as id,
+               delivery_note.sn                                             as sn,
+               delivery_note.express_company                                as expressCompany,
+               delivery_note.express_sn                                     as expressSn,
+               delivery_note.state                                          as state,
+               (select sum(quantity)
+                from delivery_package
+                where delivery_package.delivery_note_id = delivery_note.id) as quantity,
+               delivery_note.create_time                                    as createTime
+        from delivery_note
+        where delivery_note.sale_order_id = #{saleOrderId}
+    </select>
+    <select id="saleOrderFlow" resultMap="saleOrderFlowMap">
+        select role_name as roleName, concat(content,'（操作人：', creator,'）') as content, images as images, create_time as createTime
+        from sale_order_flow
+        where sale_order_id = #{id}
+          and deleted_flag = 0
+        order by id desc
+    </select>
+    <resultMap id="saleOrderFlowMap" type="org.geely.controller.dto.site.SaleOrderFlowDTO">
+        <result property="roleName" column="roleName"/>
+        <result property="content" column="content"/>
+        <result property="images" column="images"
+                typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+        <result property="createTime" column="createTime"/>
+    </resultMap>
+</mapper>

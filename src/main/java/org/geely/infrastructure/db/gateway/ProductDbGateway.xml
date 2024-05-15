@@ -1,0 +1,664 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="org.geely.infrastructure.db.gateway.ProductDbGateway">
+    <select id="skuImageList" resultType="org.geely.controller.dto.SkuImageDTO">
+        SELECT *
+        FROM sku_image
+        WHERE sku_id in
+        <foreach collection="skuIds" item="item" open="(" separator="," close=")">#{item}</foreach>
+        and deleted_flag = 0
+    </select>
+    <select id="productTagList" resultType="org.geely.controller.dto.ProductTagDTO">
+        select a.id,
+        a.name,
+        a.font_color,
+        a.background_color,
+        b.product_id as productId
+        from product_tag a
+        inner join product_tag_rel b on b.tag_id=a.id and b.deleted_flag=0
+        where b.product_id in
+        <foreach collection="spuIds" item="item" open="(" separator="," close=")">#{item}</foreach>
+        and a.deleted_flag = 0
+    </select>
+    <select id="productShopPage" resultType="org.geely.controller.dto.ProductShopListDTO">
+        select
+        a.id,
+        a.`code`,
+        a.`name`,
+        a.brand_id as brandId,
+        pb.`name` as brand,
+        a.category_id as categoryId,
+        pc.name as category,
+        a.quality_id as qualityId,
+        pq.`name` as quality,
+        a.state,
+        a.create_time as createTime
+        from product a
+        left join product_brand pb on pb.id=a.brand_id
+        left join product_quality pq on pq.id=a.quality_id
+        left join product_category pc on pc.id=a.category_id
+        where a.deleted_flag = 0
+        <if test="shopId != null and shopId != 0">
+            and a.shop_id = #{shopId}
+        </if>
+        order by a.id desc
+    </select>
+    <select id="productSupplierPage" resultType="org.geely.controller.dto.ProductSupplierListDTO">
+        select
+        a.id,
+        a.`code`,
+        a.`name`,
+        a.brand_id as brandId,
+        pb.`name` as brand,
+        a.category_id as categoryId,
+        pc.name as category,
+        a.quality_id as qualityId,
+        pq.`name` as quality,
+        a.state,
+        a.create_time as createTime,
+        s.id as shopId,
+        s.name as shopName
+        from product a
+        inner join shop s on a.shop_id = s.id and s.deleted_flag = 0
+        left join product_brand pb on pb.id=a.brand_id
+        left join product_quality pq on pq.id=a.quality_id
+        left join product_category pc on pc.id=a.category_id
+        where a.deleted_flag = 0 and a.state = 2
+        <if test="supplierId != null and supplierId != 0">
+            and a.supplier_id = #{supplierId}
+        </if>
+        order by a.id desc
+    </select>
+    <select id="listSkuBuilder" resultType="org.geely.controller.dto.SkuBuilderDTO">
+        SELECT
+            a.product_id as productId,
+            a.id,
+            a.stock,
+            b.price,
+            a.default_image AS image
+        FROM
+            sku a
+                LEFT JOIN material b ON a.material_id = b.id
+        where a.deleted_flag=0 and a.state = 1 and a.product_id in
+        <foreach collection="productIds" item="item" open="(" separator="," close=")">#{item}</foreach>
+        order by a.id desc
+    </select>
+    <select id="skuSitePage" resultMap="skuSitePageMap">
+        SELECT
+        p.id as productId,
+        s.id as skuId,
+        s.`code` as skuCode,
+        s.unit,
+        s.moq,
+        s.stock,
+        s.is_free_shipping as isFreeShipping,
+        m.`code` as materialCode,
+        IFNULL(sp.price, round(m.price + m.price * mcr.markup_rate / 100, 2)) as price,
+        p.category_id as categoryId,
+        pc.`name` as category,
+        p.brand_id as brandId,
+        p.quality_id as qualityId,
+        pq.`name` as quality,
+        pb.`name` as brand,
+        p.`name`,
+        p.`description`,
+        s.default_image as image,
+        shop.id as shopId,
+        shop.`name` as shopName,
+        ptr.tags
+        FROM
+        sku s
+        INNER JOIN product p ON s.product_id = p.id
+        INNER JOIN material m ON s.material_id = m.id
+        INNER JOIN market_channel_rel mcr ON mcr.platform_type = 4
+        AND mcr.platform_id = p.shop_id and mcr.deleted_flag=0
+        INNER JOIN customer c ON c.id = #{dto.customerId}
+        AND c.market_channel_id = mcr.market_channel_id
+        inner join shop on p.shop_id=shop.id and shop.state = 1 and shop.deleted_flag = 0
+        inner join supplier on p.supplier_id=supplier.id and supplier.state = 1 and supplier.deleted_flag = 0
+        inner join material_shop_rel msr on msr.material_id=s.material_id and msr.shop_id= p.shop_id and msr.deleted_flag = 0
+        left join sku_price sp on sp.sku_id=s.id and sp.market_channel_id=c.market_channel_id AND sp.deleted_flag = 0
+        left join product_category pc on p.category_id=pc.id
+        left join product_brand pb on p.brand_id=pb.id
+        left join product_quality pq on p.quality_id=pq.id
+        LEFT JOIN (
+        SELECT
+        ptr.product_id,
+        json_arrayagg(
+        json_object( 'name', pt.`name`, 'id', pt.`id`, 'fontColor', pt.`font_color`, 'backgroundColor', pt.`background_color` )) AS tags
+        FROM
+        product_tag_rel ptr
+        JOIN product_tag pt ON ptr.tag_id = pt.id
+        AND ptr.deleted_flag = 0
+        AND pt.deleted_flag = 0
+        GROUP BY
+        ptr.product_id
+        ) ptr ON p.id = ptr.product_id
+        <where>
+        p.mall_id = #{dto.mallId}
+        AND p.deleted_flag = 0
+        AND s.deleted_flag = 0
+        AND p.state = 2
+        AND s.state =1
+        <if test="dto.keywords != null and dto.keywords != ''">
+            AND (p.`name` like concat('%', #{dto.keywords}, '%') or s.`code` like concat('%', #{dto.keywords}, '%') or m.`code` like concat('%', #{dto.keywords}, '%'))
+        </if>
+        <if test="dto.brandId != null and dto.brandId != 0">
+            AND p.brand_id=#{dto.brandId}
+        </if>
+        <if test="dto.tagIdSet != null and dto.tagIdSet.size() > 0">
+            <foreach collection="dto.tagIdSet" item="item">
+            AND p.id in
+            (
+            select product_id from product_tag_rel where tag_id=#{item}
+            )
+            </foreach>
+        </if>
+        <if test="dto.freeShipping != null">
+            AND s.is_free_shipping=1
+        </if>
+        <if test="dto.categoryIds != null and dto.categoryIds.size() > 0">
+        And p.category_id in
+        <foreach collection="dto.categoryIds" item="item" open="(" separator="," close=")
+">#{item}</foreach>
+        </if>
+        </where>
+        group by
+        s.id,
+        p.id,
+        s.id,
+        s.`code`,
+        s.unit,
+        s.moq,
+        s.stock,
+        s.is_free_shipping,
+        m.`code`,
+        sp.price,
+        m.price,
+        mcr.markup_rate,
+        p.category_id,
+        pc.`name`,
+        p.brand_id,
+        p.quality_id,
+        pq.`name`,
+        pb.`name`,
+        p.`name`,
+        p.`description`,
+        s.default_image,
+        shop.id,
+        shop.`name`
+        order by
+        <if test="dto.sortBy == @org.geely.common.enums.SkuSortByEnum@SALES_VOLUME">
+            s.sales_volume
+            <if test="dto.isAsc == null || !dto.isAsc">
+            desc
+            </if>
+            ,
+        </if>
+        <if test="dto.sortBy == @org.geely.common.enums.SkuSortByEnum@PRICE">
+            price
+            <if test="dto.isAsc == null || !dto.isAsc">
+                desc
+            </if>
+            ,
+        </if>
+        s.default_image='',
+        <if test="dto.sortBy == null">
+        s.sales_volume desc ,
+        </if>
+        s.stock desc,
+        s.is_free_shipping desc,
+        <if test="dto.sortBy == null">
+        price,
+        </if>
+        s.update_time desc
+    </select>
+    <resultMap id="skuSitePageMap" type="org.geely.controller.dto.site.SkuListDTO">
+        <result property="tags" column="tags"
+                typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+    </resultMap>
+    <select id="cartList" resultMap="cartListMap">
+        SELECT
+        cart.id,
+        cart.quantity,
+        cart.selected,
+        p.id AS productId,
+        s.id AS skuId,
+        s.`code` AS skuCode,
+        s.unit,
+        s.moq,
+        s.stock,
+        s.is_free_shipping as isFreeShipping,
+        m.`code` AS materialCode,
+        IFNULL(
+        sp.price,
+        round( m.price + m.price * mcr.markup_rate / 100, 2 )) AS price,
+        p.brand_id AS brandId,
+        p.quality_id AS qualityId,
+        pq.`name` AS quality,
+        pb.`name` AS brand,
+        p.`name`,
+        s.default_image AS image,
+        shop.id AS shopId,
+        shop.`name` AS shopName,
+        CASE WHEN supplier.state = 0
+        OR supplier.deleted_flag != 0
+        OR shop.state = 0
+        OR shop.deleted_flag != 0
+        THEN	0 ELSE 1
+        END AS shopState,
+        CASE WHEN supplier.state = 0
+        OR supplier.deleted_flag != 0
+        OR shop.state = 0
+        OR shop.deleted_flag != 0
+        OR s.deleted_flag != 0
+        OR p.deleted_flag != 0
+        OR mcr.deleted_flag != 0
+        OR msr.deleted_flag != 0
+        THEN - 1
+        WHEN s.state != 1
+        OR p.state != 2
+        THEN 1 ELSE 0
+        END AS skuCartState,
+        ptr.tags,
+		ssr.specs
+        FROM
+        cart
+        INNER JOIN sku s ON cart.sku_id = s.id
+        INNER JOIN product p ON s.product_id = p.id
+        INNER JOIN material m ON s.material_id = m.id
+        INNER JOIN market_channel_rel mcr ON mcr.platform_type = 4
+        AND mcr.platform_id = p.shop_id
+        INNER JOIN customer c ON c.id = cart.customer_id
+        AND c.market_channel_id = mcr.market_channel_id
+        INNER JOIN shop ON p.shop_id = shop.id
+        INNER JOIN supplier ON p.supplier_id = supplier.id
+        INNER JOIN material_shop_rel msr ON msr.material_id = s.material_id
+        AND msr.shop_id = p.shop_id
+        LEFT JOIN sku_price sp ON sp.sku_id = s.id
+        AND sp.market_channel_id = c.market_channel_id
+        AND sp.deleted_flag = 0
+        LEFT JOIN product_brand pb ON p.brand_id = pb.id
+        LEFT JOIN product_quality pq ON p.quality_id = pq.id
+        LEFT JOIN (
+				SELECT
+					ptr.product_id,
+					json_arrayagg(
+					json_object( 'name', pt.`name`, 'id', pt.`id`, 'fontColor', pt.`font_color`, 'backgroundColor', pt.`background_color` )) AS tags
+				FROM
+					product_tag_rel ptr
+					JOIN product_tag pt ON ptr.tag_id = pt.id
+					AND ptr.deleted_flag = 0
+					AND pt.deleted_flag = 0
+				GROUP BY
+					ptr.product_id
+				) ptr ON p.id = ptr.product_id
+				LEFT JOIN (
+				SELECT
+					ssr.sku_id,
+					json_arrayagg(
+					json_object( 'typeId', sst.`id`, 'typeName', sst.`name`, 'name', ssr.`specs` )) AS specs
+				FROM
+					sku_specs_rel ssr
+					INNER JOIN sku_specs_type sst ON ssr.specs_type_id = sst.id
+					AND ssr.deleted_flag = 0
+					AND sst.deleted_flag = 0
+				GROUP BY
+					ssr.sku_id
+				) ssr ON ssr.sku_id = s.id
+        where
+            cart.mall_id = #{mallId}
+		AND cart.customer_id = #{customerId}
+		AND cart.account_id = #{accountId}
+		AND cart.deleted_flag = 0
+		group by
+        cart.id,
+        cart.quantity,
+        cart.selected,
+        p.id,
+        s.id,
+        s.`code`,
+        s.unit,
+        s.moq,
+        s.stock,
+        m.`code`,
+        sp.price,
+        m.price,
+        mcr.markup_rate,
+        p.brand_id,
+        p.quality_id,
+        pq.`name`,
+        pb.`name`,
+        p.`name`,
+        s.default_image,
+        shop.id,
+        shop.`name`,
+        skuCartState,
+        isFreeShipping
+		order by cart.id desc;
+    </select>
+    <resultMap id="cartListMap" type="org.geely.controller.dto.site.CartShopSkuDTO">
+        <result property="tags" column="tags"
+                typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+        <result property="specs" column="specs"
+                typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+    </resultMap>
+    <select id="orderingSkuList" resultMap="orderingSkuListMap">
+        SELECT
+            p.id AS productId,
+            s.id AS skuId,
+            s.`code` AS skuCode,
+            s.unit,
+            s.moq,
+            s.stock,
+            s.is_free_shipping as isFreeShipping,
+            m.`code` AS materialCode,
+            IFNULL(
+                    sp.price,
+                    round( m.price + m.price * mcr.markup_rate / 100, 2 )) AS price,
+            p.brand_id AS brandId,
+            p.quality_id AS qualityId,
+            pq.`name` AS quality,
+            pb.`name` AS brand,
+            p.`name`,
+            s.default_image AS image,
+            shop.id AS shopId,
+            shop.`name` AS shopName,
+            CASE WHEN supplier.state = 0
+                OR supplier.deleted_flag != 0
+                OR shop.state = 0
+                OR shop.deleted_flag != 0
+        THEN	0 ELSE 1
+        END AS shopState,
+        CASE WHEN supplier.state = 0
+        OR supplier.deleted_flag != 0
+        OR shop.state = 0
+        OR shop.deleted_flag != 0
+        OR s.deleted_flag != 0
+        OR p.deleted_flag != 0
+        OR mcr.deleted_flag != 0
+        OR msr.deleted_flag != 0
+        THEN - 1
+        WHEN s.state != 1
+        OR p.state != 2
+        THEN 1 ELSE 0
+        END AS skuCartState,
+        ptr.tags,
+		ssr.specs
+        FROM
+        sku s
+        INNER JOIN product p ON s.product_id = p.id and p.mall_id = #{mallId}
+        INNER JOIN material m ON s.material_id = m.id
+        INNER JOIN market_channel_rel mcr ON mcr.platform_type = 4
+        AND mcr.platform_id = p.shop_id
+        INNER JOIN customer c ON c.id = #{customerId}
+        AND c.market_channel_id = mcr.market_channel_id
+        INNER JOIN shop ON p.shop_id = shop.id
+        INNER JOIN supplier ON p.supplier_id = supplier.id
+        INNER JOIN material_shop_rel msr ON msr.material_id = s.material_id
+        AND msr.shop_id = p.shop_id
+        LEFT JOIN sku_price sp ON sp.sku_id = s.id
+        AND sp.market_channel_id = c.market_channel_id
+        AND sp.deleted_flag = 0
+        LEFT JOIN product_brand pb ON p.brand_id = pb.id
+        LEFT JOIN product_quality pq ON p.quality_id = pq.id
+        LEFT JOIN (
+				SELECT
+					ptr.product_id,
+					json_arrayagg(
+					json_object( 'name', pt.`name`, 'id', pt.`id`, 'fontColor', pt.`font_color`, 'backgroundColor', pt.`background_color` )) AS tags
+				FROM
+					product_tag_rel ptr
+					JOIN product_tag pt ON ptr.tag_id = pt.id
+					AND ptr.deleted_flag = 0
+					AND pt.deleted_flag = 0
+				GROUP BY
+					ptr.product_id
+				) ptr ON p.id = ptr.product_id
+				LEFT JOIN (
+				SELECT
+					ssr.sku_id,
+					json_arrayagg(
+					json_object( 'typeId', sst.`id`, 'typeName', sst.`name`, 'name', ssr.`specs` )) AS specs
+				FROM
+					sku_specs_rel ssr
+					INNER JOIN sku_specs_type sst ON ssr.specs_type_id = sst.id
+					AND ssr.deleted_flag = 0
+					AND sst.deleted_flag = 0
+				GROUP BY
+					ssr.sku_id
+				) ssr ON ssr.sku_id = s.id
+        where s.id in
+        <foreach collection="skuIds" item="item" open="(" separator="," close=")
+">#{item}</foreach>
+        group by
+        p.id,
+        s.id,
+        s.`code`,
+        s.unit,
+        s.moq,
+        s.stock,
+        m.`code`,
+        sp.price,
+        m.price,
+        mcr.markup_rate,
+        p.brand_id,
+        p.quality_id,
+        pq.`name`,
+        pb.`name`,
+        p.`name`,
+        s.default_image,
+        shop.id,
+        shop.`name`,
+        skuCartState,
+        isFreeShipping;
+    </select>
+    <resultMap id="orderingSkuListMap" type="org.geely.controller.dto.site.SkuShopOrderingDTO">
+        <result property="tags" column="tags"
+                typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+        <result property="specs" column="specs"
+                typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+    </resultMap>
+    <select id="orderSkuList" resultType="org.geely.controller.dto.site.OrderSkuDTO">
+        SELECT
+        s.id AS skuId,
+        s.`code` AS skuCode,
+        s.unit,
+        s.moq,
+        s.stock,
+        s.is_free_shipping as isFreeShipping,
+        p.id as productId,
+        p.code as productCode,
+        m.`code` AS materialCode,
+        IFNULL(
+        sp.price,
+        round( m.price + m.price * mcr.markup_rate / 100, 2 )) AS price,
+        ifnull(pq.`name`, '') AS quality,
+        pb.`name` AS brand,
+        p.`name`,
+        s.default_image AS image,
+        shop.id AS shopId,
+        supplier.id as supplierId,
+        CASE WHEN supplier.state = 0
+        OR supplier.deleted_flag != 0
+        OR shop.state = 0
+        OR shop.deleted_flag != 0
+        OR s.deleted_flag != 0
+        OR p.deleted_flag != 0
+        OR mcr.deleted_flag != 0
+        OR msr.deleted_flag != 0
+        THEN - 1
+        WHEN s.state != 1
+        OR p.state != 2
+        THEN 1 ELSE 0
+        END AS skuCartState,
+        group_concat(ssr.specs SEPARATOR '/') as specs
+        FROM
+        sku s
+        INNER JOIN product p ON s.product_id = p.id and p.mall_id = #{mallId}
+        INNER JOIN material m ON s.material_id = m.id
+        INNER JOIN market_channel_rel mcr ON mcr.platform_type = 4
+        AND mcr.platform_id = p.shop_id
+        INNER JOIN customer c ON c.id = #{customerId}
+        AND c.market_channel_id = mcr.market_channel_id
+        INNER JOIN shop ON p.shop_id = shop.id
+        INNER JOIN supplier ON p.supplier_id = supplier.id
+        INNER JOIN material_shop_rel msr ON msr.material_id = s.material_id
+        AND msr.shop_id = p.shop_id
+        LEFT JOIN sku_price sp ON sp.sku_id = s.id
+        AND sp.market_channel_id = c.market_channel_id
+        AND sp.deleted_flag = 0
+        LEFT JOIN product_brand pb ON p.brand_id = pb.id
+        LEFT JOIN product_quality pq ON p.quality_id = pq.id
+        LEFT JOIN sku_specs_rel ssr on s.id = ssr.sku_id and ssr.deleted_flag=0
+        where s.id in
+        <foreach collection="skuIds" item="item" open="(" separator="," close=")
+">#{item}</foreach>
+        group by
+        skuId,
+        skuCode,
+        s.unit,
+        s.moq,
+        s.stock,
+        isFreeShipping,
+        productId,
+        productCode,
+        materialCode,
+        price,
+        quality,
+        brand,
+        p.`name`,
+        image,
+        shopId,
+        supplierId,
+        skuCartState
+    </select>
+    <select id="getBrandIds" resultType="java.lang.Integer">
+        SELECT
+        distinct p.brand_id
+        FROM
+        sku s
+        INNER JOIN product p ON s.product_id = p.id
+        INNER JOIN material m ON s.material_id = m.id
+        INNER JOIN market_channel_rel mcr ON mcr.platform_type = 4
+        AND mcr.platform_id = p.shop_id
+        INNER JOIN customer c ON c.id = #{customerId}
+        AND c.market_channel_id = mcr.market_channel_id
+        INNER JOIN shop ON p.shop_id = shop.id
+        INNER JOIN supplier ON p.supplier_id = supplier.id
+        INNER JOIN material_shop_rel msr ON msr.material_id = s.material_id
+        AND msr.shop_id = p.shop_id
+        where
+        supplier.state = 1
+        and supplier.deleted_flag = 0
+        and shop.state = 1
+        and shop.deleted_flag = 0
+        and s.deleted_flag = 0
+        and p.deleted_flag = 0
+        and mcr.deleted_flag = 0
+        and msr.deleted_flag = 0
+        and s.state = 1
+        and p.state = 2
+        and p.mall_id=#{mallId}
+        <if test="keywords != null and keywords != ''">
+            AND (p.`name` like concat('%', #{keywords}, '%') or s.`code` like concat('%', #{keywords}, '%') or m.`code` like concat('%', #{keywords}, '%'))
+        </if>
+    </select>
+    <select id="getCategoryIds" resultType="java.lang.Integer">
+        SELECT
+        distinct p.category_id
+        FROM
+        sku s
+        INNER JOIN product p ON s.product_id = p.id
+        INNER JOIN material m ON s.material_id = m.id
+        INNER JOIN market_channel_rel mcr ON mcr.platform_type = 4
+        AND mcr.platform_id = p.shop_id
+        INNER JOIN customer c ON c.id = #{customerId}
+        AND c.market_channel_id = mcr.market_channel_id
+        INNER JOIN shop ON p.shop_id = shop.id
+        INNER JOIN supplier ON p.supplier_id = supplier.id
+        INNER JOIN material_shop_rel msr ON msr.material_id = s.material_id
+        AND msr.shop_id = p.shop_id
+        where
+        supplier.state = 1
+        and supplier.deleted_flag = 0
+        and shop.state = 1
+        and shop.deleted_flag = 0
+        and s.deleted_flag = 0
+        and p.deleted_flag = 0
+        and mcr.deleted_flag = 0
+        and msr.deleted_flag = 0
+        and s.state = 1
+        and p.state = 2
+        and p.mall_id=#{mallId}
+        <if test="keywords != null and keywords != ''">
+            AND (p.`name` like concat('%', #{keywords}, '%') or s.`code` like concat('%', #{keywords}, '%') or m.`code` like concat('%', #{keywords}, '%'))
+        </if>
+    </select>
+    <select id="getTagIds" resultType="java.lang.Integer">
+        SELECT
+        distinct ptr.tag_id
+        FROM
+        sku s
+        INNER JOIN product p ON s.product_id = p.id
+        INNER JOIN material m ON s.material_id = m.id
+        INNER JOIN market_channel_rel mcr ON mcr.platform_type = 4
+        AND mcr.platform_id = p.shop_id
+        INNER JOIN customer c ON c.id = #{customerId}
+        AND c.market_channel_id = mcr.market_channel_id
+        INNER JOIN shop ON p.shop_id = shop.id
+        INNER JOIN supplier ON p.supplier_id = supplier.id
+        INNER JOIN material_shop_rel msr ON msr.material_id = s.material_id
+        AND msr.shop_id = p.shop_id
+        INNER JOIN product_tag_rel ptr ON p.id = ptr.product_id
+        AND ptr.deleted_flag = 0
+        where
+        supplier.state = 1
+        and supplier.deleted_flag = 0
+        and shop.state = 1
+        and shop.deleted_flag = 0
+        and s.deleted_flag = 0
+        and p.deleted_flag = 0
+        and mcr.deleted_flag = 0
+        and msr.deleted_flag = 0
+        and s.state = 1
+        and p.state = 2
+        and p.mall_id=#{mallId}
+        <if test="keywords != null and keywords != ''">
+            AND (p.`name` like concat('%', #{keywords}, '%') or s.`code` like concat('%', #{keywords}, '%') or m.`code` like concat('%', #{keywords}, '%'))
+        </if>
+    </select>
+    <select id="getTopOneFreeShippingSku" resultType="java.lang.Integer">
+        SELECT
+        s.id
+        FROM
+        sku s
+        INNER JOIN product p ON s.product_id = p.id
+        INNER JOIN material m ON s.material_id = m.id
+        INNER JOIN market_channel_rel mcr ON mcr.platform_type = 4
+        AND mcr.platform_id = p.shop_id
+        INNER JOIN customer c ON c.id = #{customerId}
+        AND c.market_channel_id = mcr.market_channel_id
+        INNER JOIN shop ON p.shop_id = shop.id
+        INNER JOIN supplier ON p.supplier_id = supplier.id
+        INNER JOIN material_shop_rel msr ON msr.material_id = s.material_id
+        AND msr.shop_id = p.shop_id
+        where
+        supplier.state = 1
+        and supplier.deleted_flag = 0
+        and shop.state = 1
+        and shop.deleted_flag = 0
+        and s.deleted_flag = 0
+        and p.deleted_flag = 0
+        and mcr.deleted_flag = 0
+        and msr.deleted_flag = 0
+        and s.state = 1
+        and p.state = 2
+        and p.mall_id=#{mallId}
+        and s.is_free_shipping = 1
+        <if test="keywords != null and keywords != ''">
+            AND (p.`name` like concat('%', #{keywords}, '%') or s.`code` like concat('%', #{keywords}, '%') or m.`code` like concat('%', #{keywords}, '%'))
+        </if>
+        limit 1;
+    </select>
+</mapper>

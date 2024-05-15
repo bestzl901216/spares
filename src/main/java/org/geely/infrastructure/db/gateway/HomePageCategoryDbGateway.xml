@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="org.geely.infrastructure.db.gateway.HomePageCategoryDbGateway">
+    <select id="homePageCategoryList" resultType="org.geely.controller.dto.HomePageSkuListDTO">
+        SELECT
+            a.mall_id,
+            a.c1_id,
+            a.img_url as imgUrl,
+            a.sort,
+            b.NAME AS c1Name,
+            TRIM(LEADING ',' FROM concat(b.parent_path,',', b.id)) as c1Code,
+            d.id as sku_id,
+            d.is_free_shipping as freeShipping,
+            c.sort AS skuSort,
+            f.NAME AS spuName,
+            f.`description` AS spuDescription,
+            f.id AS productId,
+            d.default_image as image
+        FROM
+            home_page_category a
+                INNER JOIN product_category b ON b.id = a.c1_id
+                AND b.deleted_flag = 0
+                LEFT JOIN home_page_sku c ON c.c1_id = a.c1_id
+                AND c.deleted_flag = 0
+                LEFT JOIN sku d ON d.id = c.sku_id
+                AND d.state = 1
+                AND d.deleted_flag = 0
+                LEFT JOIN product f ON f.id = d.product_id
+                AND f.state = 2
+                AND f.deleted_flag = 0
+        WHERE
+            a.mall_id = #{mallId}
+          AND a.deleted_flag =0
+    </select>
+</mapper>
